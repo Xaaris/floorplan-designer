@@ -1,0 +1,16 @@
+# Floor plans and exported projects are personal data (they show where you live)
+# and are not part of the tool. Use `git add -f` if you ever want to commit one.
+*.png
+*.jpg
+*.jpeg
+*.webp
+*.pdf
+floorplan*.json
+
+# Local tooling config (the app needs no server, so this is convenience only)
+.claude/
+
+# OS / editor noise
+.DS_Store
+.idea/
+.vscode/
