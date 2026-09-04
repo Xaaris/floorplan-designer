@@ -1,0 +1,1214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Floor Plan Designer</title>
+<style>
+  /* ===================================================================
+     Layout
+     =================================================================== */
+  :root {
+    --bg: #eceff1;
+    --panel: #f7f8f9;
+    --line: #d5dade;
+    --ink: #263238;
+    --ink-dim: #75838c;
+    --accent: #0f7b9c;
+    --accent-soft: #e2f1f6;
+    --danger: #c0392b;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    font: 13px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    color: var(--ink);
+    background: var(--bg);
+    display: grid;
+    grid-template-columns: 210px minmax(0, 1fr) 250px;
+    grid-template-rows: auto minmax(0, 1fr);
+    height: 100vh;
+    overflow: hidden;
+  }
+
+  /* ---- top bar ---- */
+  header {
+    grid-column: 1 / -1;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 8px 12px;
+    background: var(--panel);
+    border-bottom: 1px solid var(--line);
+  }
+  header .sep { width: 1px; height: 22px; background: var(--line); }
+  header .spacer { flex: 1; }
+  #scaleReadout { color: var(--ink-dim); white-space: nowrap; }
+  #scaleReadout b { color: var(--ink); font-variant-numeric: tabular-nums; }
+  #status { color: var(--accent); min-height: 1em; }
+  #status.warn { color: var(--danger); }
+
+  /* ---- buttons & fields ---- */
+  button {
+    font: inherit;
+    padding: 5px 10px;
+    border: 1px solid var(--line);
+    border-radius: 5px;
+    background: #fff;
+    color: var(--ink);
+    cursor: pointer;
+  }
+  button:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  button.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button.danger:hover { border-color: var(--danger); color: var(--danger); }
+  label.check { display: inline-flex; align-items: center; gap: 5px; cursor: pointer; user-select: none; }
+  input[type="number"], input[type="text"] {
+    font: inherit;
+    width: 100%;
+    padding: 4px 6px;
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    background: #fff;
+    color: var(--ink);
+  }
+  input[type="color"] {
+    width: 100%; height: 28px; padding: 0;
+    border: 1px solid var(--line); border-radius: 4px; background: #fff; cursor: pointer;
+  }
+
+  /* ---- side panels ---- */
+  aside {
+    background: var(--panel);
+    overflow-y: auto;
+    padding: 10px;
+  }
+  #catalog { border-right: 1px solid var(--line); }
+  #props   { border-left: 1px solid var(--line); }
+  aside h2 {
+    font-size: 10px; text-transform: uppercase; letter-spacing: .09em;
+    color: var(--ink-dim); margin: 14px 0 6px;
+  }
+  aside h2:first-child { margin-top: 0; }
+
+  /* ---- catalog ---- */
+  .cat-item {
+    display: flex; align-items: center; gap: 8px;
+    width: 100%; padding: 4px 6px; margin-bottom: 2px;
+    border: 1px solid transparent; border-radius: 4px;
+    background: none; cursor: pointer; text-align: left;
+  }
+  .cat-item:hover { background: var(--accent-soft); border-color: transparent; color: inherit; }
+  .cat-item .swatch {
+    flex: none; width: 18px; height: 13px; border-radius: 2px;
+    border: 1px solid rgba(0,0,0,.25);
+  }
+  .cat-item .nm { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .cat-item .dim { color: var(--ink-dim); font-size: 11px; font-variant-numeric: tabular-nums; }
+  .cat-item .del {
+    flex: none; border: 0; background: none; padding: 0 2px; color: var(--ink-dim);
+    visibility: hidden; cursor: pointer; font-size: 14px; line-height: 1;
+  }
+  .cat-item:hover .del { visibility: visible; }
+  .cat-item .del:hover { color: var(--danger); }
+  #addCustom { width: 100%; margin-top: 6px; }
+
+  /* ---- properties ---- */
+  #propsBody { display: none; }
+  #propsBody.on { display: block; }
+  #propsEmpty { color: var(--ink-dim); }
+  .row { margin-bottom: 8px; }
+  .row > label { display: block; font-size: 11px; color: var(--ink-dim); margin-bottom: 2px; }
+  .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .unit { display: flex; align-items: baseline; gap: 4px; }
+  .unit span { color: var(--ink-dim); font-size: 11px; }
+  .btnrow { display: flex; gap: 6px; margin-top: 10px; }
+  .btnrow button { flex: 1; }
+  hr { border: 0; border-top: 1px solid var(--line); margin: 12px 0; }
+
+  /* ---- stage ---- */
+  main {
+    position: relative;
+    display: flex; align-items: center; justify-content: center;
+    padding: 14px;
+    overflow: hidden;
+    background:
+      repeating-conic-gradient(#e4e8ea 0% 25%, #eceff1 0% 50%) 0 0 / 18px 18px;
+  }
+  #stage {
+    max-width: 100%; max-height: 100%;
+    background: #fff;
+    box-shadow: 0 1px 10px rgba(0,0,0,.18);
+    --k: 1;                        /* screen px per image px, kept in sync by JS */
+    touch-action: none;
+  }
+  #stage.calibrating { cursor: crosshair; }
+  #dropzone {
+    position: absolute; inset: 24px;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 10px;
+    border: 2px dashed var(--line); border-radius: 10px;
+    background: rgba(255,255,255,.7);
+    color: var(--ink-dim); text-align: center;
+  }
+  #dropzone.hide { display: none; }
+  #dropzone strong { color: var(--ink); font-size: 15px; }
+  main.dragover #dropzone { border-color: var(--accent); background: var(--accent-soft); }
+
+  /* ---- svg pieces ---- */
+  .furn { cursor: grab; }
+  .furn.dragging { cursor: grabbing; }
+  .furn > .shape { fill-opacity: .62; stroke: rgba(0,0,0,.55); vector-effect: non-scaling-stroke; stroke-width: 1; }
+  .furn > text {
+    fill: #101518; font-size: calc(11px / var(--k));
+    text-anchor: middle; dominant-baseline: middle;
+    pointer-events: none; paint-order: stroke;
+    stroke: rgba(255,255,255,.75); stroke-width: calc(2.5px / var(--k));
+  }
+  #overlay .outline {
+    fill: none; stroke: var(--accent); stroke-width: 2; vector-effect: non-scaling-stroke;
+    stroke-dasharray: 5 3; pointer-events: none;
+  }
+  #overlay .rot-stem { stroke: var(--accent); stroke-width: 1.5; vector-effect: non-scaling-stroke; pointer-events: none; }
+  #overlay .rot-grip { fill: #fff; stroke: var(--accent); stroke-width: 2; vector-effect: non-scaling-stroke; cursor: alias; }
+  #scaleLayer .ref-line { stroke: #d81b60; stroke-width: 2.5; vector-effect: non-scaling-stroke; stroke-dasharray: 7 4; }
+  #scaleLayer .ref-cap  { stroke: #d81b60; stroke-width: 2.5; vector-effect: non-scaling-stroke; }
+  #scaleLayer text { fill: #d81b60; font-size: calc(12px / var(--k)); font-weight: 600;
+    paint-order: stroke; stroke: rgba(255,255,255,.85); stroke-width: calc(3px / var(--k)); }
+  #scaleLayer .bar { stroke: var(--ink); stroke-width: 2; vector-effect: non-scaling-stroke; }
+  #scaleLayer .bar-label { fill: var(--ink); stroke: rgba(255,255,255,.85); }
+  #rubber { stroke: #d81b60; stroke-width: 2; vector-effect: non-scaling-stroke; stroke-dasharray: 6 4; }
+
+  /* ---- dialogs ---- */
+  dialog {
+    border: 1px solid var(--line); border-radius: 8px; padding: 16px;
+    min-width: 260px; color: var(--ink); background: var(--panel);
+    box-shadow: 0 8px 30px rgba(0,0,0,.25);
+  }
+  dialog::backdrop { background: rgba(20,30,35,.35); }
+  dialog h3 { margin: 0 0 4px; font-size: 14px; }
+  dialog p.hint { margin: 0 0 12px; color: var(--ink-dim); }
+  dialog .btnrow { justify-content: flex-end; }
+  select { font: inherit; width: 100%; padding: 4px 6px; border: 1px solid var(--line); border-radius: 4px; background: #fff; }
+</style>
+</head>
+<body>
+
+<header>
+  <button id="btnLoad">Load floor plan…</button>
+  <button id="btnCalibrate">Set scale</button>
+  <div class="sep"></div>
+  <div id="scaleReadout">No scale set</div>
+  <div class="sep"></div>
+  <label class="check"><input type="checkbox" id="chkSnap" checked> snap 5 cm</label>
+  <label class="check"><input type="checkbox" id="chkShowRef" checked> show scale line</label>
+  <div class="spacer"></div>
+  <div id="status"></div>
+  <div class="sep"></div>
+  <button id="btnExport">Export…</button>
+  <button id="btnImport">Import…</button>
+  <input type="file" id="fileImage" accept="image/png,image/jpeg,image/webp" hidden>
+  <input type="file" id="fileJson" accept="application/json,.json" hidden>
+</header>
+
+<aside id="catalog"></aside>
+
+<main id="stagewrap">
+  <svg id="stage" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid meet" hidden>
+    <image id="plan" x="0" y="0"/>
+    <g id="furnLayer"></g>
+    <g id="scaleLayer"></g>
+    <g id="overlay"></g>
+  </svg>
+  <div id="dropzone">
+    <strong>Drop a floor plan here</strong>
+    <div>PNG, JPEG or WebP — or use “Load floor plan…” above</div>
+  </div>
+</main>
+
+<aside id="props">
+  <h2>Properties</h2>
+  <div id="propsEmpty">Nothing selected.</div>
+  <div id="propsBody">
+    <div class="row">
+      <label for="pName">Name</label>
+      <input type="text" id="pName">
+    </div>
+    <div class="row row2">
+      <div>
+        <label for="pW">Width</label>
+        <div class="unit"><input type="number" id="pW" min="0.05" step="0.05"><span>m</span></div>
+      </div>
+      <div>
+        <label for="pH">Depth</label>
+        <div class="unit"><input type="number" id="pH" min="0.05" step="0.05"><span>m</span></div>
+      </div>
+    </div>
+    <div class="row row2">
+      <div>
+        <label for="pRot">Rotation</label>
+        <div class="unit"><input type="number" id="pRot" step="1"><span>°</span></div>
+      </div>
+      <div>
+        <label for="pShape">Shape</label>
+        <select id="pShape">
+          <option value="rect">Rectangle</option>
+          <option value="ellipse">Round</option>
+        </select>
+      </div>
+    </div>
+    <div class="row">
+      <label for="pColor">Color</label>
+      <input type="color" id="pColor">
+    </div>
+    <div class="btnrow">
+      <button id="pRot90">+90°</button>
+      <button id="pDup">Duplicate</button>
+    </div>
+    <div class="btnrow">
+      <button id="pBack">Send back</button>
+      <button id="pFront">Bring front</button>
+    </div>
+    <div class="btnrow">
+      <button id="pDel" class="danger">Delete</button>
+    </div>
+    <hr>
+    <div id="propsInfo" style="color:var(--ink-dim)"></div>
+  </div>
+
+  <hr>
+  <h2>Shortcuts</h2>
+  <div style="color:var(--ink-dim)">
+    drag — move<br>
+    arrows — nudge 1 cm (⇧ 10 cm)<br>
+    ⌥ while dragging — ignore snap<br>
+    ⌘/Ctrl+D — duplicate<br>
+    ⌫ — delete · esc — deselect
+  </div>
+</aside>
+
+<!-- scale calibration input -->
+<dialog id="dlgScale">
+  <!-- novalidate: min/step are there for arrow-key stepping only. Left to the
+       browser they would refuse any value off the step grid (e.g. a 2.345 m
+       wall). The JS below validates instead. -->
+  <form method="dialog" novalidate>
+    <h3>How long is this line?</h3>
+    <p class="hint">Enter the real-world distance between the two points.</p>
+    <div class="unit"><input type="number" id="dlgScaleVal" min="0.01" step="0.01" value="1" autofocus><span>m</span></div>
+    <div class="btnrow">
+      <button type="button" data-close>Cancel</button>
+      <button value="ok" id="dlgScaleOk">Set scale</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- custom furniture -->
+<dialog id="dlgCustom">
+  <form method="dialog" novalidate>
+    <h3>New furniture</h3>
+    <p class="hint">Saved to your catalog for reuse.</p>
+    <div class="row">
+      <label for="cName">Name</label>
+      <input type="text" id="cName" placeholder="e.g. Sideboard">
+    </div>
+    <div class="row row2">
+      <div>
+        <label for="cW">Width</label>
+        <div class="unit"><input type="number" id="cW" min="0.05" step="0.05" value="1.00"><span>m</span></div>
+      </div>
+      <div>
+        <label for="cH">Depth</label>
+        <div class="unit"><input type="number" id="cH" min="0.05" step="0.05" value="0.60"><span>m</span></div>
+      </div>
+    </div>
+    <div class="row row2">
+      <div>
+        <label for="cShape">Shape</label>
+        <select id="cShape">
+          <option value="rect">Rectangle</option>
+          <option value="ellipse">Round</option>
+        </select>
+      </div>
+      <div>
+        <label for="cColor">Color</label>
+        <input type="color" id="cColor" value="#9c8aa5">
+      </div>
+    </div>
+    <div class="btnrow">
+      <button type="button" data-close>Cancel</button>
+      <button value="ok">Add</button>
+    </div>
+  </form>
+</dialog>
+
+<script>
+"use strict";
+const SVGNS = "http://www.w3.org/2000/svg";
+const $ = (sel, root = document) => root.querySelector(sel);
+const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+
+// =====================================================================
+// State
+//   w/h        metres
+//   x/y        centre of the item, in IMAGE pixels
+//   rot        degrees, clockwise
+// Geometry lives in image pixels so it is independent of window size;
+// sizes live in metres so re-calibrating the scale rescales everything.
+// =====================================================================
+const STORAGE_KEY = "floorplan-designer/v1";
+let state = blankState();
+let selectedId = null;
+let mode = "select";               // "select" | "calibrate"
+
+function blankState() {
+  return {
+    image: null,                   // { dataUrl, w, h }
+    scale: null,                   // { p1, p2, meters, pxPerMeter }
+    items: [],                     // z-order = array order
+    custom: [],
+    ui: { snap: true, showRef: true }
+  };
+}
+
+// =====================================================================
+// Catalog
+// =====================================================================
+const PALETTE = {
+  seating: "#b5838d", table: "#a68a64", bed: "#7d8cc4",
+  storage: "#8a9a5b", wet: "#6c8ea4", other: "#9c8aa5"
+};
+const CATALOG = [
+  ["Seating & tables", [
+    ["Chair",          0.45, 0.45, "rect",    PALETTE.seating],
+    ["Armchair",       0.85, 0.85, "rect",    PALETTE.seating],
+    ["Sofa (2-seat)",  1.60, 0.90, "rect",    PALETTE.seating],
+    ["Sofa (3-seat)",  2.10, 0.90, "rect",    PALETTE.seating],
+    ["Dining table",   1.60, 0.90, "rect",    PALETTE.table],
+    ["Round table",    1.10, 1.10, "ellipse", PALETTE.table],
+    ["Desk",           1.40, 0.70, "rect",    PALETTE.table],
+    ["Coffee table",   1.10, 0.60, "rect",    PALETTE.table]
+  ]],
+  ["Bedroom", [
+    ["Bed (single)",   0.90, 2.00, "rect", PALETTE.bed],
+    ["Bed (double)",   1.60, 2.00, "rect", PALETTE.bed],
+    ["Bed (king)",     1.80, 2.00, "rect", PALETTE.bed],
+    ["Nightstand",     0.45, 0.40, "rect", PALETTE.bed]
+  ]],
+  ["Storage", [
+    ["Wardrobe",       1.50, 0.60, "rect", PALETTE.storage],
+    ["Bookshelf",      0.80, 0.30, "rect", PALETTE.storage],
+    ["Sideboard",      1.20, 0.45, "rect", PALETTE.storage],
+    ["TV stand",       1.40, 0.40, "rect", PALETTE.storage]
+  ]],
+  ["Kitchen & bath", [
+    ["Fridge",         0.60, 0.65, "rect", PALETTE.wet],
+    ["Washing machine",0.60, 0.60, "rect", PALETTE.wet],
+    ["Counter (1 m)",  1.00, 0.60, "rect", PALETTE.wet],
+    ["Toilet",         0.40, 0.70, "rect", PALETTE.wet],
+    ["Sink",           0.60, 0.50, "rect", PALETTE.wet],
+    ["Bathtub",        1.70, 0.75, "rect", PALETTE.wet],
+    ["Shower",         0.90, 0.90, "rect", PALETTE.wet]
+  ]],
+  ["Other", [
+    ["Rug",            2.00, 3.00, "rect", PALETTE.other],
+    ["Plant",          0.50, 0.50, "ellipse", PALETTE.other],
+    ["Box 1 × 1 m",    1.00, 1.00, "rect", PALETTE.other]
+  ]]
+];
+
+// =====================================================================
+// DOM handles
+// =====================================================================
+const svg        = $("#stage");
+const planImg    = $("#plan");
+const furnLayer  = $("#furnLayer");
+const scaleLayer = $("#scaleLayer");
+const overlay    = $("#overlay");
+const stagewrap  = $("#stagewrap");
+const dropzone   = $("#dropzone");
+const nodes      = new Map();      // item id -> <g>
+
+// =====================================================================
+// Geometry helpers
+// =====================================================================
+/** Mouse/pointer event -> image pixel coordinates. */
+function toImg(evt) {
+  const p = svg.createSVGPoint();
+  p.x = evt.clientX;
+  p.y = evt.clientY;
+  const m = svg.getScreenCTM();
+  return m ? p.matrixTransform(m.inverse()) : { x: 0, y: 0 };
+}
+const ppm = () => (state.scale ? state.scale.pxPerMeter : 0);
+const m2px = (m) => m * ppm();
+const px2m = (px) => (ppm() ? px / ppm() : 0);
+
+/** screen px per image px — published as --k so strokes/text stay constant on screen. */
+function syncK() {
+  if (!state.image) return;
+  const k = (svg.clientWidth || state.image.w) / state.image.w;
+  svg.style.setProperty("--k", String(k || 1));
+  return k || 1;
+}
+const kNow = () => parseFloat(getComputedStyle(svg).getPropertyValue("--k")) || 1;
+
+/** Snap a metre value to the 5 cm grid. */
+const snapM = (m) => Math.round(m / 0.05) * 0.05;
+
+// =====================================================================
+// Rendering
+// =====================================================================
+function renderAll() {
+  renderImage();
+  renderItems();
+  renderScaleLayer();
+  renderCatalog();
+  renderProps();
+  updateReadout();
+}
+
+function renderImage() {
+  if (!state.image) {
+    svg.hidden = true;
+    dropzone.classList.remove("hide");
+    return;
+  }
+  const { dataUrl, w, h } = state.image;
+  svg.hidden = false;
+  dropzone.classList.add("hide");
+  svg.setAttribute("viewBox", `0 0 ${w} ${h}`);
+  planImg.setAttribute("width", w);
+  planImg.setAttribute("height", h);
+  planImg.setAttribute("href", dataUrl);
+  syncK();
+}
+
+function shapeEl(item) {
+  if (item.shape === "ellipse") {
+    const e = document.createElementNS(SVGNS, "ellipse");
+    e.setAttribute("cx", 0);
+    e.setAttribute("cy", 0);
+    return e;
+  }
+  return document.createElementNS(SVGNS, "rect");
+}
+
+function renderItems() {
+  furnLayer.textContent = "";
+  nodes.clear();
+  if (!state.scale) return;
+  for (const item of state.items) {
+    const g = document.createElementNS(SVGNS, "g");
+    g.setAttribute("class", "furn");
+    g.dataset.id = item.id;
+    const shape = shapeEl(item);
+    shape.setAttribute("class", "shape");
+    const label = document.createElementNS(SVGNS, "text");
+    g.append(shape, label);
+    furnLayer.append(g);
+    nodes.set(item.id, g);
+    g.addEventListener("pointerdown", (e) => beginDrag(e, item, g));
+    syncNode(item);
+  }
+}
+
+/** Push an item's data into its existing DOM node (no rebuild). */
+function syncNode(item) {
+  const g = nodes.get(item.id);
+  if (!g) return;
+  const W = m2px(item.w);
+  const H = m2px(item.h);
+  const shape = g.firstChild;
+  if (item.shape === "ellipse") {
+    shape.setAttribute("rx", W / 2);
+    shape.setAttribute("ry", H / 2);
+  } else {
+    shape.setAttribute("x", -W / 2);
+    shape.setAttribute("y", -H / 2);
+    shape.setAttribute("width", W);
+    shape.setAttribute("height", H);
+  }
+  shape.setAttribute("fill", item.color);
+  const label = g.lastChild;
+  const k = kNow();
+  // Only label items that are big enough on screen to read.
+  label.textContent = (W * k > 46 && H * k > 15) ? item.name : "";
+  g.setAttribute("transform", `translate(${item.x} ${item.y}) rotate(${item.rot})`);
+}
+
+function renderScaleLayer() {
+  scaleLayer.textContent = "";
+  if (!state.scale || !state.image) return;
+  const k = kNow();
+  const { p1, p2, meters } = state.scale;
+
+  if (state.ui.showRef) {
+    const line = document.createElementNS(SVGNS, "line");
+    line.setAttribute("class", "ref-line");
+    line.setAttribute("x1", p1.x); line.setAttribute("y1", p1.y);
+    line.setAttribute("x2", p2.x); line.setAttribute("y2", p2.y);
+    scaleLayer.append(line);
+
+    // end caps, perpendicular to the line
+    const ang = Math.atan2(p2.y - p1.y, p2.x - p1.x);
+    const cap = 7 / k;
+    for (const p of [p1, p2]) {
+      const c = document.createElementNS(SVGNS, "line");
+      c.setAttribute("class", "ref-cap");
+      c.setAttribute("x1", p.x - Math.sin(ang) * cap);
+      c.setAttribute("y1", p.y + Math.cos(ang) * cap);
+      c.setAttribute("x2", p.x + Math.sin(ang) * cap);
+      c.setAttribute("y2", p.y - Math.cos(ang) * cap);
+      scaleLayer.append(c);
+    }
+    const t = document.createElementNS(SVGNS, "text");
+    t.setAttribute("x", (p1.x + p2.x) / 2);
+    t.setAttribute("y", (p1.y + p2.y) / 2 - 9 / k);
+    t.setAttribute("text-anchor", "middle");
+    t.textContent = `${meters.toFixed(2)} m`;
+    scaleLayer.append(t);
+  }
+
+  // 1 m reference bar, bottom-left
+  const pad = 16 / k;
+  const y = state.image.h - pad;
+  const bar = document.createElementNS(SVGNS, "path");
+  bar.setAttribute("class", "bar");
+  const tick = 5 / k;
+  bar.setAttribute("d",
+    `M${pad} ${y - tick} V${y + tick} M${pad} ${y} H${pad + ppm()} M${pad + ppm()} ${y - tick} V${y + tick}`);
+  bar.setAttribute("fill", "none");
+  const bt = document.createElementNS(SVGNS, "text");
+  bt.setAttribute("class", "bar-label");
+  bt.setAttribute("x", pad + ppm() / 2);
+  bt.setAttribute("y", y - 10 / k);
+  bt.setAttribute("text-anchor", "middle");
+  bt.textContent = "1 m";
+  scaleLayer.append(bar, bt);
+}
+
+/** Selection outline + rotate grip. Rebuilt on select / edit / resize. */
+function drawSelection() {
+  overlay.textContent = "";
+  const item = current();
+  if (!item) return;
+  const k = kNow();
+  const W = m2px(item.w);
+  const H = m2px(item.h);
+  const g = document.createElementNS(SVGNS, "g");
+  g.setAttribute("transform", `translate(${item.x} ${item.y}) rotate(${item.rot})`);
+
+  const out = shapeEl(item);
+  out.setAttribute("class", "outline");
+  if (item.shape === "ellipse") {
+    out.setAttribute("rx", W / 2 + 2 / k);
+    out.setAttribute("ry", H / 2 + 2 / k);
+  } else {
+    out.setAttribute("x", -W / 2 - 2 / k);
+    out.setAttribute("y", -H / 2 - 2 / k);
+    out.setAttribute("width", W + 4 / k);
+    out.setAttribute("height", H + 4 / k);
+  }
+
+  const gripY = -H / 2 - 22 / k;
+  const stem = document.createElementNS(SVGNS, "line");
+  stem.setAttribute("class", "rot-stem");
+  stem.setAttribute("x1", 0); stem.setAttribute("y1", -H / 2);
+  stem.setAttribute("x2", 0); stem.setAttribute("y2", gripY);
+  const grip = document.createElementNS(SVGNS, "circle");
+  grip.setAttribute("class", "rot-grip");
+  grip.setAttribute("cx", 0);
+  grip.setAttribute("cy", gripY);
+  grip.setAttribute("r", 6 / k);
+  grip.addEventListener("pointerdown", (e) => beginRotate(e, item));
+
+  g.append(out, stem, grip);
+  overlay.append(g);
+}
+
+function updateReadout() {
+  const el = $("#scaleReadout");
+  if (!state.scale) {
+    el.textContent = "No scale set";
+  } else {
+    const area = state.items.reduce((s, i) => s + i.w * i.h, 0);
+    el.innerHTML = `1 m = <b>${ppm().toFixed(1)}</b> px` +
+      ` · plan <b>${px2m(state.image.w).toFixed(2)}</b> × <b>${px2m(state.image.h).toFixed(2)}</b> m` +
+      (state.items.length ? ` · ${state.items.length} items, <b>${area.toFixed(2)}</b> m²` : "");
+  }
+  $("#btnCalibrate").textContent = state.scale ? "Reset scale" : "Set scale";
+  $("#btnCalibrate").disabled = !state.image;
+}
+
+let statusTimer = null;
+function status(msg, warn = false) {
+  const el = $("#status");
+  el.textContent = msg;
+  el.classList.toggle("warn", !!warn);
+  clearTimeout(statusTimer);
+  if (msg) statusTimer = setTimeout(() => { el.textContent = ""; }, 4000);
+}
+
+// =====================================================================
+// Catalog panel
+// =====================================================================
+function renderCatalog() {
+  const box = $("#catalog");
+  box.textContent = "";
+  const add = (name, w, h, shape, color, onDelete) => {
+    const b = document.createElement("button");
+    b.className = "cat-item";
+    b.title = `${name} — ${w.toFixed(2)} × ${h.toFixed(2)} m`;
+    const sw = document.createElement("span");
+    sw.className = "swatch";
+    sw.style.background = color;
+    if (shape === "ellipse") sw.style.borderRadius = "50%";
+    const nm = document.createElement("span");
+    nm.className = "nm";
+    nm.textContent = name;
+    const dim = document.createElement("span");
+    dim.className = "dim";
+    dim.textContent = `${w.toFixed(2)}×${h.toFixed(2)}`;
+    b.append(sw, nm, dim);
+    if (onDelete) {
+      const x = document.createElement("span");
+      x.className = "del";
+      x.textContent = "×";
+      x.title = "Remove from catalog";
+      x.addEventListener("click", (e) => { e.stopPropagation(); onDelete(); });
+      b.append(x);
+    }
+    b.addEventListener("click", () => placeItem({ name, w, h, shape, color }));
+    box.append(b);
+  };
+
+  for (const [group, entries] of CATALOG) {
+    const h2 = document.createElement("h2");
+    h2.textContent = group;
+    box.append(h2);
+    for (const [name, w, h, shape, color] of entries) add(name, w, h, shape, color);
+  }
+
+  const h2 = document.createElement("h2");
+  h2.textContent = "My furniture";
+  box.append(h2);
+  if (!state.custom.length) {
+    const p = document.createElement("div");
+    p.style.color = "var(--ink-dim)";
+    p.textContent = "None yet.";
+    box.append(p);
+  }
+  state.custom.forEach((c, i) => add(c.name, c.w, c.h, c.shape || "rect", c.color, () => {
+    state.custom.splice(i, 1);
+    renderCatalog();
+    save();
+  }));
+
+  const plus = document.createElement("button");
+  plus.id = "addCustom";
+  plus.textContent = "+  New furniture…";
+  plus.addEventListener("click", openCustomDialog);
+  box.append(plus);
+}
+
+// =====================================================================
+// Items: add / select / edit / delete
+// =====================================================================
+const current = () => state.items.find((i) => i.id === selectedId) || null;
+
+function placeItem(def) {
+  if (!state.scale) {
+    status("Set the scale first — click “Set scale” and draw a line of known length.", true);
+    return;
+  }
+  // Cascade slightly so repeated placements don't stack exactly.
+  const off = (state.items.length % 8) * 0.18 * ppm();
+  const item = {
+    id: "i" + Math.random().toString(36).slice(2, 9),
+    name: def.name,
+    w: def.w, h: def.h,
+    shape: def.shape || "rect",
+    color: def.color,
+    x: state.image.w / 2 + off,
+    y: state.image.h / 2 + off,
+    rot: 0
+  };
+  state.items.push(item);
+  renderItems();
+  select(item.id);
+  updateReadout();
+  save();
+}
+
+function select(id) {
+  selectedId = id;
+  drawSelection();
+  renderProps();
+}
+
+function renderProps() {
+  const item = current();
+  $("#propsBody").classList.toggle("on", !!item);
+  $("#propsEmpty").style.display = item ? "none" : "";
+  if (!item) return;
+  $("#pName").value = item.name;
+  $("#pW").value = item.w.toFixed(2);
+  $("#pH").value = item.h.toFixed(2);
+  $("#pRot").value = Math.round(item.rot);
+  $("#pColor").value = item.color;
+  $("#pShape").value = item.shape;
+  $("#propsInfo").innerHTML =
+    `Footprint <b>${(item.w * item.h).toFixed(2)} m²</b><br>` +
+    `Position ${px2m(item.x).toFixed(2)} / ${px2m(item.y).toFixed(2)} m`;
+}
+
+function editCurrent(fn) {
+  const item = current();
+  if (!item) return;
+  fn(item);
+  syncNode(item);
+  drawSelection();
+  renderProps();
+  updateReadout();
+  save();
+}
+
+function deleteCurrent() {
+  const item = current();
+  if (!item) return;
+  state.items = state.items.filter((i) => i !== item);
+  selectedId = null;
+  renderItems();
+  drawSelection();
+  renderProps();
+  updateReadout();
+  save();
+}
+
+function duplicateCurrent() {
+  const item = current();
+  if (!item) return;
+  const copy = { ...item, id: "i" + Math.random().toString(36).slice(2, 9) };
+  copy.x += 0.15 * ppm();
+  copy.y += 0.15 * ppm();
+  state.items.push(copy);
+  renderItems();
+  select(copy.id);
+  updateReadout();
+  save();
+}
+
+function reorderCurrent(toFront) {
+  const item = current();
+  if (!item) return;
+  state.items = state.items.filter((i) => i !== item);
+  if (toFront) state.items.push(item); else state.items.unshift(item);
+  renderItems();
+  drawSelection();
+  save();
+}
+
+// =====================================================================
+// Dragging & rotating
+// =====================================================================
+function beginDrag(evt, item, g) {
+  if (mode !== "select" || evt.button !== 0) return;
+  evt.stopPropagation();
+  evt.preventDefault();
+  select(item.id);
+  const start = toImg(evt);
+  const dx = item.x - start.x;
+  const dy = item.y - start.y;
+  g.classList.add("dragging");
+
+  gesture((ev) => {
+    const p = toImg(ev);
+    item.x = p.x + dx;
+    item.y = p.y + dy;
+    if (state.ui.snap && !ev.altKey) {
+      item.x = m2px(snapM(px2m(item.x)));
+      item.y = m2px(snapM(px2m(item.y)));
+    }
+    syncNode(item);
+    drawSelection();
+  }, () => {
+    g.classList.remove("dragging");
+    renderProps();
+    save();
+  });
+}
+
+/** Run a pointer gesture with the move/up listeners on `window`.
+    They must NOT live on the grabbed element: drawSelection() rebuilds the
+    overlay on every move, which detaches the rotate grip mid-gesture and would
+    silently kill rotation after the first move. `window` survives any
+    re-render, and also keeps the gesture alive when the pointer leaves the
+    shape, so no pointer capture is needed. */
+function gesture(onMove, onEnd) {
+  const move = (ev) => onMove(ev);
+  const up = () => {
+    removeEventListener("pointermove", move);
+    removeEventListener("pointerup", up);
+    removeEventListener("pointercancel", up);
+    if (onEnd) onEnd();
+  };
+  addEventListener("pointermove", move);
+  addEventListener("pointerup", up);
+  addEventListener("pointercancel", up);
+}
+
+function beginRotate(evt, item) {
+  evt.stopPropagation();
+  evt.preventDefault();
+  gesture((ev) => {
+    const p = toImg(ev);
+    let a = Math.atan2(p.y - item.y, p.x - item.x) * 180 / Math.PI + 90;
+    if (!ev.altKey) a = Math.round(a / 15) * 15;
+    item.rot = ((a % 360) + 360) % 360;
+    syncNode(item);
+    drawSelection();
+    $("#pRot").value = Math.round(item.rot);
+  }, save);
+}
+
+// =====================================================================
+// Calibration ("Maßstab")
+// =====================================================================
+let calib = null;                  // { p1 } while waiting for the second click
+
+function startCalibration() {
+  if (!state.image) return;
+  mode = "calibrate";
+  calib = null;
+  svg.classList.add("calibrating");
+  $("#btnCalibrate").classList.add("active");
+  overlay.textContent = "";
+  status("Click the two ends of a distance you know (a wall, a door width…). Esc to cancel.");
+}
+
+function endCalibration() {
+  mode = "select";
+  calib = null;
+  svg.classList.remove("calibrating");
+  $("#btnCalibrate").classList.remove("active");
+  $("#rubber")?.remove();
+  drawSelection();
+}
+
+svg.addEventListener("click", (evt) => {
+  if (mode !== "calibrate") return;
+  const p = toImg(evt);
+  if (!calib) {
+    calib = { p1: p };
+    const line = document.createElementNS(SVGNS, "line");
+    line.id = "rubber";
+    line.setAttribute("x1", p.x); line.setAttribute("y1", p.y);
+    line.setAttribute("x2", p.x); line.setAttribute("y2", p.y);
+    overlay.append(line);
+    status("Now click the other end.");
+    return;
+  }
+  const p1 = calib.p1;
+  const p2 = p;
+  const dist = Math.hypot(p2.x - p1.x, p2.y - p1.y);
+  if (dist < 4) { status("Those points are too close together — try again.", true); return; }
+
+  const dlg = $("#dlgScale");
+  $("#dlgScaleVal").value = state.scale ? state.scale.meters.toFixed(2) : "1.00";
+  dlg.returnValue = "cancel";
+  dlg.showModal();
+  dlg.addEventListener("close", function once() {
+    dlg.removeEventListener("close", once);
+    endCalibration();
+    if (dlg.returnValue !== "ok") { status("Calibration cancelled."); return; }
+    const meters = parseFloat($("#dlgScaleVal").value);
+    if (!(meters > 0)) { status("That is not a valid length.", true); return; }
+    state.scale = { p1: { x: p1.x, y: p1.y }, p2: { x: p2.x, y: p2.y }, meters, pxPerMeter: dist / meters };
+    renderItems();          // items are stored in metres, so they rescale
+    renderScaleLayer();
+    drawSelection();
+    updateReadout();
+    save();
+    status(`Scale set: 1 m = ${ppm().toFixed(1)} px.`);
+  }, { once: false });
+});
+
+svg.addEventListener("pointermove", (evt) => {
+  if (mode !== "calibrate" || !calib) return;
+  const p = toImg(evt);
+  const line = $("#rubber");
+  if (line) { line.setAttribute("x2", p.x); line.setAttribute("y2", p.y); }
+});
+
+// clicking empty plan area deselects
+svg.addEventListener("pointerdown", (evt) => {
+  if (mode === "select" && evt.target.closest(".furn") === null && evt.target.closest(".rot-grip") === null) {
+    select(null);
+  }
+});
+
+// =====================================================================
+// Image import (downscaled so it fits the localStorage quota)
+// =====================================================================
+const MAX_EDGE = 2400;
+
+function readAsDataURL(file) {
+  return new Promise((res, rej) => {
+    const fr = new FileReader();
+    fr.onload = () => res(fr.result);
+    fr.onerror = () => rej(fr.error);
+    fr.readAsDataURL(file);
+  });
+}
+
+async function importImageFile(file) {
+  if (!file || !/^image\//.test(file.type)) { status("That is not an image file.", true); return; }
+  status("Loading image…");
+  // Via data URL, not a blob URL: data URLs never taint the canvas, which
+  // matters because this page usually runs from file://.
+  const src = await readAsDataURL(file);
+  const img = await new Promise((res, rej) => {
+    const i = new Image();
+    i.onload = () => res(i);
+    i.onerror = () => rej(new Error("decode failed"));
+    i.src = src;
+  }).catch(() => null);
+  if (!img) { status("Could not read that image.", true); return; }
+
+  const s = Math.min(1, MAX_EDGE / Math.max(img.naturalWidth, img.naturalHeight));
+  const w = Math.round(img.naturalWidth * s);
+  const h = Math.round(img.naturalHeight * s);
+  const c = document.createElement("canvas");
+  c.width = w; c.height = h;
+  const ctx = c.getContext("2d");
+  ctx.fillStyle = "#fff";                 // flatten transparency (JPEG has no alpha)
+  ctx.fillRect(0, 0, w, h);
+  ctx.drawImage(img, 0, 0, w, h);
+
+  const hadScale = !!state.scale;
+  state.image = { dataUrl: c.toDataURL("image/jpeg", 0.85), w, h };
+  // A different image invalidates the old calibration and any placement on it.
+  state.scale = null;
+  state.items = [];
+  selectedId = null;
+  renderAll();
+  drawSelection();
+  save();
+  status(hadScale
+    ? "New plan loaded — scale and furniture were reset."
+    : "Plan loaded. Now set the scale.");
+}
+
+$("#btnLoad").addEventListener("click", () => $("#fileImage").click());
+$("#fileImage").addEventListener("change", (e) => {
+  if (e.target.files[0]) importImageFile(e.target.files[0]);
+  e.target.value = "";
+});
+
+for (const ev of ["dragenter", "dragover"]) {
+  stagewrap.addEventListener(ev, (e) => { e.preventDefault(); stagewrap.classList.add("dragover"); });
+}
+for (const ev of ["dragleave", "drop"]) {
+  stagewrap.addEventListener(ev, (e) => { e.preventDefault(); stagewrap.classList.remove("dragover"); });
+}
+stagewrap.addEventListener("drop", (e) => {
+  const f = e.dataTransfer?.files?.[0];
+  if (f) importImageFile(f);
+});
+
+// =====================================================================
+// Persistence: debounced localStorage auto-save + JSON export/import
+// =====================================================================
+let saveTimer = null;
+function save() {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    } catch (err) {
+      status("Auto-save failed (plan too large for browser storage) — use Export to keep your work.", true);
+    }
+  }, 300);
+}
+
+function load() {
+  let raw = null;
+  try { raw = localStorage.getItem(STORAGE_KEY); } catch { /* storage disabled */ }
+  if (!raw) return;
+  try { adopt(JSON.parse(raw)); } catch { /* corrupt, ignore */ }
+}
+
+/** Accept a state object from storage or an imported file, filling in defaults. */
+function adopt(data) {
+  if (!data || typeof data !== "object") throw new Error("bad data");
+  const s = blankState();
+  if (data.image?.dataUrl && data.image.w > 0 && data.image.h > 0) s.image = data.image;
+  if (data.scale?.pxPerMeter > 0) s.scale = data.scale;
+  if (Array.isArray(data.items)) {
+    s.items = data.items
+      .filter((i) => i && i.w > 0 && i.h > 0)
+      .map((i) => ({
+        id: i.id || "i" + Math.random().toString(36).slice(2, 9),
+        name: String(i.name ?? "Item"),
+        w: +i.w, h: +i.h,
+        shape: i.shape === "ellipse" ? "ellipse" : "rect",
+        color: /^#[0-9a-f]{6}$/i.test(i.color || "") ? i.color : PALETTE.other,
+        x: +i.x || 0, y: +i.y || 0,
+        rot: ((+i.rot || 0) % 360 + 360) % 360
+      }));
+  }
+  if (Array.isArray(data.custom)) {
+    s.custom = data.custom
+      .filter((c) => c && c.w > 0 && c.h > 0)
+      .map((c) => ({
+        name: String(c.name ?? "Custom"), w: +c.w, h: +c.h,
+        shape: c.shape === "ellipse" ? "ellipse" : "rect",
+        color: /^#[0-9a-f]{6}$/i.test(c.color || "") ? c.color : PALETTE.other
+      }));
+  }
+  s.ui.snap = data.ui?.snap !== false;
+  s.ui.showRef = data.ui?.showRef !== false;
+  state = s;
+  selectedId = null;
+  $("#chkSnap").checked = state.ui.snap;
+  $("#chkShowRef").checked = state.ui.showRef;
+  renderAll();
+  drawSelection();
+}
+
+$("#btnExport").addEventListener("click", () => {
+  const blob = new Blob([JSON.stringify(state)], { type: "application/json" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "floorplan.json";
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  status("Exported floorplan.json (image included).");
+});
+
+$("#btnImport").addEventListener("click", () => $("#fileJson").click());
+$("#fileJson").addEventListener("change", async (e) => {
+  const f = e.target.files[0];
+  e.target.value = "";
+  if (!f) return;
+  try {
+    adopt(JSON.parse(await f.text()));
+    save();
+    status("Project imported.");
+  } catch {
+    status("That file is not a valid floorplan.json.", true);
+  }
+});
+
+// =====================================================================
+// Wiring: top bar, properties panel, dialogs, keyboard
+// =====================================================================
+$("#btnCalibrate").addEventListener("click", () => {
+  if (mode === "calibrate") { endCalibration(); status("Calibration cancelled."); }
+  else startCalibration();
+});
+$("#chkSnap").addEventListener("change", (e) => { state.ui.snap = e.target.checked; save(); });
+$("#chkShowRef").addEventListener("change", (e) => {
+  state.ui.showRef = e.target.checked;
+  renderScaleLayer();
+  save();
+});
+
+$("#pName").addEventListener("input", (e) => editCurrent((i) => { i.name = e.target.value; }));
+$("#pW").addEventListener("input", (e) => {
+  const v = parseFloat(e.target.value);
+  if (v > 0) editCurrent((i) => { i.w = v; });
+});
+$("#pH").addEventListener("input", (e) => {
+  const v = parseFloat(e.target.value);
+  if (v > 0) editCurrent((i) => { i.h = v; });
+});
+$("#pRot").addEventListener("input", (e) => {
+  const v = parseFloat(e.target.value);
+  if (!Number.isNaN(v)) editCurrent((i) => { i.rot = ((v % 360) + 360) % 360; });
+});
+$("#pColor").addEventListener("input", (e) => editCurrent((i) => { i.color = e.target.value; }));
+$("#pShape").addEventListener("change", (e) => {
+  editCurrent((i) => { i.shape = e.target.value; });
+  renderItems();            // shape element type changes, so rebuild
+  drawSelection();
+});
+$("#pRot90").addEventListener("click", () => editCurrent((i) => { i.rot = (i.rot + 90) % 360; }));
+$("#pDup").addEventListener("click", duplicateCurrent);
+$("#pDel").addEventListener("click", deleteCurrent);
+$("#pBack").addEventListener("click", () => reorderCurrent(false));
+$("#pFront").addEventListener("click", () => reorderCurrent(true));
+
+// Cancel buttons are type="button": inside <form method="dialog"> a submit
+// button runs constraint validation, which would refuse to close the dialog
+// while a field is invalid.
+for (const b of document.querySelectorAll("dialog [data-close]")) {
+  b.addEventListener("click", () => b.closest("dialog").close("cancel"));
+}
+
+function openCustomDialog() {
+  const dlg = $("#dlgCustom");
+  dlg.returnValue = "cancel";
+  dlg.showModal();
+  dlg.addEventListener("close", function once() {
+    dlg.removeEventListener("close", once);
+    if (dlg.returnValue !== "ok") return;
+    const name = $("#cName").value.trim() || "Custom";
+    const w = parseFloat($("#cW").value);
+    const h = parseFloat($("#cH").value);
+    if (!(w > 0 && h > 0)) { status("Width and depth must be greater than 0.", true); return; }
+    const def = { name, w, h, shape: $("#cShape").value, color: $("#cColor").value };
+    state.custom.push(def);
+    renderCatalog();
+    save();
+    placeItem(def);
+    $("#cName").value = "";
+  });
+}
+
+document.addEventListener("keydown", (e) => {
+  if (document.querySelector("dialog[open]")) return;
+  if (e.key === "Escape") {
+    if (mode === "calibrate") { endCalibration(); status("Calibration cancelled."); }
+    else select(null);
+    return;
+  }
+  const t = e.target;
+  if (t instanceof HTMLElement && /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)) return;
+
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "d") { e.preventDefault(); duplicateCurrent(); return; }
+  if (!current()) return;
+
+  if (e.key === "Delete" || e.key === "Backspace") { e.preventDefault(); deleteCurrent(); return; }
+  const step = (e.shiftKey ? 0.10 : 0.01) * ppm();
+  const nudge = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] }[e.key];
+  if (nudge) {
+    e.preventDefault();
+    editCurrent((i) => { i.x += nudge[0]; i.y += nudge[1]; });
+  }
+});
+
+// Keep --k, labels and handle sizes in step with the window. Both a
+// ResizeObserver and the window resize event: the observer alone did not fire
+// reliably for the <svg> box, which left --k stale (labels/handles wrongly
+// sized) after a window resize. The observer reference is kept deliberately.
+function relayout() {
+  if (!state.image) return;
+  syncK();
+  for (const item of state.items) syncNode(item);
+  renderScaleLayer();
+  drawSelection();
+}
+const stageObserver = new ResizeObserver(relayout);
+stageObserver.observe(svg);
+addEventListener("resize", relayout);
+
+// =====================================================================
+// Boot
+// =====================================================================
+load();
+renderAll();
+</script>
+</body>
+</html>
