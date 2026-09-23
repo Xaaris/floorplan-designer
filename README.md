@@ -17,6 +17,9 @@ dependencies, no server. **Double-click it** and it opens in your browser.
    Drag it where you want it.
 4. **Adjust** — the right panel edits the selected item: name, width, depth,
    rotation, rectangle vs. round, and colour. Also duplicate, z-order and delete.
+5. **Measure** — click the button, then click two points to get the distance
+   between them. It stays armed, so you can take several in a row; <kbd>esc</kbd>
+   stops. **Clear** removes them all. Measurements are saved with the project.
 
 Furniture sizes are stored in **metres**, not pixels, so if you re-set the scale
 later everything rescales itself correctly.
@@ -31,7 +34,7 @@ later everything rescales itself correctly.
 | rotate handle | drag the circle above the item — snaps to 15° |
 | <kbd>⌘</kbd>/<kbd>Ctrl</kbd>+<kbd>D</kbd> | duplicate |
 | <kbd>⌫</kbd> | delete |
-| <kbd>esc</kbd> | deselect, or cancel calibration |
+| <kbd>esc</kbd> | deselect, or cancel calibration / measuring |
 
 ### Your own furniture
 
